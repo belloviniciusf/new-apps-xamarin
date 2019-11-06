@@ -3,22 +3,51 @@ module.exports = function (app) {
         fs = require('fs'),      
         exec = require('child_process').execFile,
         nodeGit = require('nodegit'),            
-        plist = require('plist'),    
+        plist = require('plist'),  
+        rimraf = require("rimraf"),          
+        parser = require('fast-xml-parser'),
+        defaultOptions = {
+          attributeNamePrefix : "@_",
+          attrNodeName: "@", //default is false
+          textNodeName : "#text",
+          ignoreAttributes : true,
+          cdataTagName: "__cdata", //default is false
+          cdataPositionChar: "\\c",
+          format: false,
+          indentBy: "  ",
+          supressEmptyNode: false,
+        },
+        parserXml = new parser.j2xParser(defaultOptions),
         slugify = require('slugify'),            
         controller = {};    
 
-    controller.createNewApp = async function (req, res) {
-      if (_.isEmpty(req.body.name)) return res.status(500).json({msg: `not requirements fields`});
-      
-      var appName = req.body.name;
-      var identifier = slugify(_.lowerCase(req.body.name));                  
-      await cloneBranch();                                                                       
-      // await parseInfoPlist(appName, identifier);
-      // await parseIosCsproj(identifier);
-      // await parseAndroidManifest(appName, identifier);
-      // await createImages();
-      await createBranchAndPush(identifier);
-      res.send("Finished!");
+    controller.createNewApp = async function (req, res) {                
+        if (_.isEmpty(req.body.name)) return res.status(500).json({msg: `not requirements fields`});
+        
+        var appName = req.body.name;
+        var identifier = slugify(_.lowerCase(req.body.name));            
+        await cloneBranch();                                     
+        await uploadImages(req.files);                                                
+        // await parseInfoPlist(appName, identifier);
+        // await parseIosCsproj(identifier);
+        // await parseAndroidManifest(appName, identifier);
+        // await modifyImages();        
+        // await createImages();
+        // await createBranchAndPush(identifier);
+        // await removeTemporaryDirAndImages();
+        res.send("Finished!");      
+    };
+
+    async function uploadImages(files) {
+      return new Promise((resolve, reject) => {
+          files.forEach((file) => {
+            fs.writeFile(`./tmp/TitleClose/PackageBuildFiles/${file.originalname}`, file.buffer, (err) => {
+              if (err) return reject(`error in save image ${err}`);              
+              console.log(`image ${file.originalname} saved`);
+            });
+            resolve();
+          });
+      });
     };
 
     async function createBranchAndPush(identifier) {
@@ -71,7 +100,10 @@ module.exports = function (app) {
                       })
                       .catch((err) => {
                         console.log(`error in push branch ${err}`);
-                      })                                
+                      })
+                  .then(() => {
+                    console.log(`finish create branch and push`);
+                  })                                
               })
               .catch((err) => {
                 console.log(`error in open repository ${err}`);
@@ -118,55 +150,63 @@ module.exports = function (app) {
     };
 
     async function parseIosCsproj(identifier){
-      return new Promise((resolve, reject) => {
-        var parser = require('xml2json');
-        let iOSPath = "./tmp/TitleClose/TitleClose.iOS/TitleClose.iOS.csproj";
-        fs.readFile(iOSPath, function(err, data) {
-            var json = JSON.parse(parser.toJson(data, {reversible: true}));
-            json.Project.PropertyGroup.forEach((propertyGroup) => {
-                if (propertyGroup.IpaPackageName) {
-                    propertyGroup.IpaPackageName = `com.titleclose.${identifier}`;                    
-                }
-            });  
-            var stringified = JSON.stringify(json);
-            var xml = parser.toXml(stringified);
-            fs.writeFile(iOSPath, xml, function(err, data) {
-                if (err) return reject({err: err, msg: `error in parse ios csproj`});                
-                console.log('updated ios csproj!');
-                resolve();                
-              });          
-        });
+      return new Promise((resolve, reject) => {        
+        let iOSPath = "./tmp/TitleClose/TitleClose.iOS/TitleClose.iOS.csproj";        
+        const xmlData = fs.readFileSync(iOSPath).toString();
+        var parsed = parser.parse(xmlData);                                              
+        parsed.Project.PropertyGroup.forEach((propertyGroup) => {
+            if (propertyGroup.IpaPackageName) {
+                propertyGroup.IpaPackageName = `com.titleclose.${identifier}`;                    
+            }
+        });                          
+        var xml = parserXml.parse(parsed);
+        fs.writeFile(iOSPath, xml, function(err, data) {
+            if (err) return reject({err: err, msg: `error in parse ios csproj`});                
+            console.log('updated ios csproj!');
+            resolve();                
+          });                  
       });       
     };
 
     async function parseAndroidManifest(name, identifier){
-      return new Promise((resolve, reject) => {
-        var parser = require('xml2json');
+      return new Promise((resolve, reject) => {        
         let androidPath = "./tmp/TitleClose/TitleClose.Droid/Properties/AndroidManifest.xml";
-        fs.readFile(androidPath, function(err, data) {
-            var json = JSON.parse(parser.toJson(data, {reversible: true}));
-            let manifest = json.manifest;
-            manifest.package = `com.titleclose.${identifier}`;
-            manifest.application['android:label'] = name;
-            manifest['android:versionCode'] = "1";
-            json.manifest = manifest;
-            var stringified = JSON.stringify(json);
-            var xml = parser.toXml(stringified);
-            fs.writeFile(androidPath, xml, function(err, data) {
-                if (err) return reject({err, msg: `error in parse android manifest`});                
-                console.log('updated androidmanifest!');
-                resolve();
-              });
-        });
+        const xmlData = fs.readFileSync(androidPath).toString();                
+        var json = parser.parse(xmlData);                                              
+        let manifest = json.manifest;
+        manifest.package = `com.titleclose.${identifier}`;
+        manifest.application['android:label'] = name;
+        manifest['android:versionCode'] = "1";
+        json.manifest = manifest;            
+        var xml = parserXml.parse(json);
+        fs.writeFile(androidPath, xml, function(err, data) {
+            if (err) return reject({err, msg: `error in parse android manifest`});                
+            console.log('updated androidmanifest!');
+            resolve();
+          });        
       });        
     }
 
     async function createImages(){
-      exec("./MobileTemplateBuilder.exe", function(err, data) {  
-        if (err) console.log(`error in create images ${err}`);
-        console.log(data.toString());                       
-        return;
-      });  
+      return new Promise((resolve, reject) => {
+        exec("./MobileTemplateBuilder.exe", function(err, data) {  
+          if (err) return reject(`error in create images ${err}`);
+          console.log(`succesfully create images ${data.toString()}`);                       
+          resolve();                  
+        });  
+      });      
+    }
+
+    async function removeTemporaryDirAndImages(){      
+      return new Promise((resolve) => {
+        rimraf("./tmp/*", function (){
+          rimraf("./images/*", function (){
+            console.log("remove tmp images"); 
+            resolve();
+          });
+        });        
+      })
+      
     }
 
     return controller;
