@@ -6,35 +6,72 @@ module.exports = function (app) {
         plist = require('plist'),  
         rimraf = require("rimraf"),          
         parser = require('fast-xml-parser'),
+        he = require('he'),    
+        options = {
+            attributeNamePrefix : "",
+            attrNodeName: "attr", //default is 'false'
+            textNodeName : "#text",
+            ignoreAttributes : false,
+            ignoreNameSpace : false,
+            allowBooleanAttributes : true,
+            parseNodeValue : true,
+            parseAttributeValue : true,
+            trimValues: true,
+            cdataTagName: "__cdata", //default is 'false'
+            cdataPositionChar: "\\c",
+            localeRange: "", //To support non english character in tag/attribute values.
+            parseTrueNumberOnly: false,
+            arrayMode: false, //"strict"
+            attrValueProcessor: (val, attrName) => he.decode(val, {isAttributeValue: true}),//default is a=>a
+            tagValueProcessor : (val, tagName) => he.decode(val), //default is a=>a
+            stopNodes: ["parse-me-as-string"]
+        },
+        optionsCsProj = {
+          attributeNamePrefix : "",
+          attrNodeName: "attr", //default is 'false'
+          textNodeName : "#text",
+          ignoreAttributes : false,
+          ignoreNameSpace : false,
+          allowBooleanAttributes : true,
+          parseNodeValue : true,
+          parseAttributeValue : true,
+          trimValues: true,
+          cdataTagName: "__cdata", //default is 'false'
+          cdataPositionChar: "\\c",
+          localeRange: "", //To support non english character in tag/attribute values.
+          parseTrueNumberOnly: true,
+          arrayMode: false, //"strict"
+          attrValueProcessor: (val, attrName) => he.decode(val, {isAttributeValue: true}),//default is a=>a
+          tagValueProcessor : (val, tagName) => he.decode(val), //default is a=>a
+          stopNodes: ["parse-me-as-string"]
+      },
         defaultOptions = {
-          attributeNamePrefix : "@_",
-          attrNodeName: "@", //default is false
+          attributeNamePrefix : "",
+          attrNodeName: "attr", //default is false
           textNodeName : "#text",
           ignoreAttributes : true,
           cdataTagName: "__cdata", //default is false
           cdataPositionChar: "\\c",
-          format: false,
+          format: true,
           indentBy: "  ",
           supressEmptyNode: false,
         },
-        parserXml = new parser.j2xParser(defaultOptions),
-        slugify = require('slugify'),            
+        parserXml = new parser.j2xParser(defaultOptions),        
         controller = {};    
 
     controller.createNewApp = async function (req, res) {                
         if (_.isEmpty(req.body.name)) return res.status(500).json({msg: `not requirements fields`});
         
         var appName = req.body.name;
-        var identifier = slugify(_.lowerCase(req.body.name));            
+        var identifier = String(_.lowerCase(req.body.name)).replace(/\s/g,'')      
         await cloneBranch();                                     
         await uploadImages(req.files);                                                
-        // await parseInfoPlist(appName, identifier);
-        // await parseIosCsproj(identifier);
-        // await parseAndroidManifest(appName, identifier);
-        // await modifyImages();        
-        // await createImages();
-        // await createBranchAndPush(identifier);
-        // await removeTemporaryDirAndImages();
+        await parseInfoPlist(appName, identifier);
+        await parseIosCsproj(identifier);
+        await parseAndroidManifest(identifier);                
+        await createImages();
+        await createBranchAndPush(String(appName).trim());
+        await removeTemporaryDirAndImages();
         res.send("Finished!");      
     };
 
@@ -51,67 +88,70 @@ module.exports = function (app) {
     };
 
     async function createBranchAndPush(identifier) {
+      return new Promise((resolve, reject) => {
         try {                                    
-            let oid;
-                                            
-            nodeGit.Repository.open('./tmp')
-              .then((repo) => {          
-                return repo.getHeadCommit()
-                  .then(function(commit) {                                                        
-                    return repo.createBranch(
-                      identifier,
-                      commit,
-                      0)
-                  })
-                  .then(() => {              
-                    return repo.checkoutBranch(identifier);                    
-                  })                        
-                  .then(() => {
-                    return repo.refreshIndex();
-                  })
-                  .then((index) => {
-                    return index.addAll('.').then(() => { return index.write()}).then(() => { return index.writeTree()});
-                  })
-                  .then((oidResult) => {
-                    oid = oidResult;
-                    return nodeGit.Reference.nameToId(repo, "HEAD");
-                  })
-                  .then((head) => {
-                    return repo.getCommit(head);
-                  })
-                  .then((parent) => {            
-                    var author = nodeGit.Signature.now("Vinícius Belló",
-                      "bello.viniciusf@gmail.com");
-                    var committer = nodeGit.Signature.now("Vinícius Belló",
-                      "bello.viniciusf@gmail.com");              
-                    return repo.createCommit("HEAD", author, committer, "first commit", oid, [parent]);              
-                  })
-                  .then(() => {                         
-                    nodeGit.Remote.lookup(repo, "origin")
-                      .then((remote) => {
-                        return remote.push([`refs/heads/${identifier}:refs/heads/${identifier}`],
-                        {
-                          callbacks: {
-                            credentials: function(url, userName) {
-                              return nodeGit.Cred.sshKeyFromAgent(userName);
-                            }
+          let oid;
+                                          
+          nodeGit.Repository.open('./tmp')
+            .then((repo) => {          
+              return repo.getHeadCommit()
+                .then(function(commit) {                                                        
+                  return repo.createBranch(
+                    identifier,
+                    commit,
+                    0)
+                })
+                .then(() => {              
+                  return repo.checkoutBranch(identifier);                    
+                })                        
+                .then(() => {
+                  return repo.refreshIndex();
+                })
+                .then((index) => {
+                  return index.addAll('.').then(() => { return index.write()}).then(() => { return index.writeTree()});
+                })
+                .then((oidResult) => {
+                  oid = oidResult;
+                  return nodeGit.Reference.nameToId(repo, "HEAD");
+                })
+                .then((head) => {
+                  return repo.getCommit(head);
+                })
+                .then((parent) => {            
+                  var author = nodeGit.Signature.now("Vinícius Belló",
+                    "bello.viniciusf@gmail.com");
+                  var committer = nodeGit.Signature.now("Vinícius Belló",
+                    "bello.viniciusf@gmail.com");              
+                  return repo.createCommit("HEAD", author, committer, "first commit", oid, [parent]);              
+                })
+                .then(() => {                         
+                  nodeGit.Remote.lookup(repo, "origin")
+                    .then((remote) => {
+                      return remote.push([`refs/heads/${identifier}:refs/heads/${identifier}`],
+                      {
+                        callbacks: {
+                          credentials: function(url, userName) {
+                            return nodeGit.Cred.sshKeyFromAgent(userName);
                           }
-                        })
+                        }
                       })
-                      .catch((err) => {
-                        console.log(`error in push branch ${err}`);
-                      })
-                  .then(() => {
-                    console.log(`finish create branch and push`);
-                  })                                
-              })
-              .catch((err) => {
-                console.log(`error in open repository ${err}`);
-              })        
-            })                          
-        } catch (error) {
-            throw error;
-        }        
+                    })
+                    .catch((err) => {
+                      reject(`error in push branch ${err}`);                      
+                    })
+                .then(() => {
+                  console.log(`finish create branch and push`);
+                  resolve();
+                })                                
+            })
+            .catch((err) => {
+              reject(`error in open repository ${err}`);              
+            })        
+          })                          
+      } catch (error) {
+        reject(error);          
+      }        
+      });        
     };
 
     async function cloneBranch(){
@@ -153,7 +193,7 @@ module.exports = function (app) {
       return new Promise((resolve, reject) => {        
         let iOSPath = "./tmp/TitleClose/TitleClose.iOS/TitleClose.iOS.csproj";        
         const xmlData = fs.readFileSync(iOSPath).toString();
-        var parsed = parser.parse(xmlData);                                              
+        var parsed = parser.parse(xmlData, optionsCsProj, true);                                              
         parsed.Project.PropertyGroup.forEach((propertyGroup) => {
             if (propertyGroup.IpaPackageName) {
                 propertyGroup.IpaPackageName = `com.titleclose.${identifier}`;                    
@@ -168,15 +208,16 @@ module.exports = function (app) {
       });       
     };
 
-    async function parseAndroidManifest(name, identifier){
+    async function parseAndroidManifest(identifier){
       return new Promise((resolve, reject) => {        
         let androidPath = "./tmp/TitleClose/TitleClose.Droid/Properties/AndroidManifest.xml";
         const xmlData = fs.readFileSync(androidPath).toString();                
-        var json = parser.parse(xmlData);                                              
+        var json = parser.parse(xmlData, options, true);                                              
         let manifest = json.manifest;
-        manifest.package = `com.titleclose.${identifier}`;
+        manifest.attr.package = `com.titleclose.${identifier}`;
         manifest.application['android:label'] = name;
-        manifest['android:versionCode'] = "1";
+        manifest.application.attr['android:label'] = name;
+        manifest.attr['android:versionCode'] = "1";
         json.manifest = manifest;            
         var xml = parserXml.parse(json);
         fs.writeFile(androidPath, xml, function(err, data) {
@@ -199,11 +240,9 @@ module.exports = function (app) {
 
     async function removeTemporaryDirAndImages(){      
       return new Promise((resolve) => {
-        rimraf("./tmp/*", function (){
-          rimraf("./images/*", function (){
-            console.log("remove tmp images"); 
-            resolve();
-          });
+        rimraf("./tmp/*", function (){        
+          console.log("remove tmp images"); 
+          resolve();          
         });        
       })
       
