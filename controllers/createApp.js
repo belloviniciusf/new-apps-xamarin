@@ -64,14 +64,14 @@ module.exports = function (app) {
         
         var appName = req.body.name;
         var identifier = String(_.lowerCase(req.body.name)).replace(/\s/g,'')      
-        await cloneBranch();                                     
-        await uploadImages(req.files);                                                
-        await parseInfoPlist(appName, identifier);
+        // await cloneBranch();                                     
+        // await uploadImages(req.files);                                                
+        // await parseInfoPlist(appName, identifier);
         await parseIosCsproj(identifier);
-        await parseAndroidManifest(identifier);                
-        await createImages();
-        await createBranchAndPush(String(appName).trim());
-        await removeTemporaryDirAndImages();
+        // await parseAndroidManifest(appName, identifier);                
+        // await createImages();
+        // await createBranchAndPush(String(appName).replace(/\s/g,''));
+        // await removeTemporaryDirAndImages();
         res.send("Finished!");      
     };
 
@@ -179,6 +179,7 @@ module.exports = function (app) {
         var plistObj = plist.parse(fs.readFileSync('./tmp/TitleClose/TitleClose.iOS/Info.plist', 'utf8'));
         plistObj['CFDisplayName'] = name;
         plistObj['CFBundleDisplayName'] = name;        
+        plistObj['CFBundleName'] = name;        
         plistObj['CFBundleIdentifier'] = `com.titleclose.${identifier}`;
         var result = plist.build(plistObj);
         fs.writeFile('./tmp/TitleClose/TitleClose.iOS/Info.plist', result, (err) => {
@@ -191,16 +192,18 @@ module.exports = function (app) {
 
     async function parseIosCsproj(identifier){
       return new Promise((resolve, reject) => {        
-        let iOSPath = "./tmp/TitleClose/TitleClose.iOS/TitleClose.iOS.csproj";        
+        // let iOSPath = "./tmp/TitleClose/TitleClose.iOS/TitleClose.iOS.csproj";        
+        let iOSPath = "Y:/Projects/new-big-titleclose-mobile/TitleClose/TitleClose.iOS/TitleClose.iOS.csproj";        
         const xmlData = fs.readFileSync(iOSPath).toString();
-        var parsed = parser.parse(xmlData, optionsCsProj, true);                                              
-        parsed.Project.PropertyGroup.forEach((propertyGroup) => {
-            if (propertyGroup.IpaPackageName) {
-                propertyGroup.IpaPackageName = `com.titleclose.${identifier}`;                    
-            }
-        });                          
-        var xml = parserXml.parse(parsed);
-        fs.writeFile(iOSPath, xml, function(err, data) {
+        xmlNewData = xmlData.replace('com.titleclose', `com.titleclose.${identifier}`)
+        // var parsed = parser.parse(xmlData, optionsCsProj, true);                                              
+        // parsed.Project.PropertyGroup.forEach((propertyGroup) => {
+        //     if (propertyGroup.IpaPackageName) {
+        //         propertyGroup.IpaPackageName = `com.titleclose.${identifier}`;                    
+        //     }
+        // });                          
+        // var xml = parserXml.parse(parsed);
+        fs.writeFile(iOSPath, xmlNewData, function(err, data) {
             if (err) return reject({err: err, msg: `error in parse ios csproj`});                
             console.log('updated ios csproj!');
             resolve();                
@@ -208,7 +211,7 @@ module.exports = function (app) {
       });       
     };
 
-    async function parseAndroidManifest(identifier){
+    async function parseAndroidManifest(name, identifier){
       return new Promise((resolve, reject) => {        
         let androidPath = "./tmp/TitleClose/TitleClose.Droid/Properties/AndroidManifest.xml";
         const xmlData = fs.readFileSync(androidPath).toString();                
