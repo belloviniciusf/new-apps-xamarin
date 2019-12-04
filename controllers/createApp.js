@@ -64,14 +64,14 @@ module.exports = function (app) {
         
         var appName = req.body.name;
         var identifier = String(_.lowerCase(req.body.name)).replace(/\s/g,'')      
-        // await cloneBranch();                                     
-        // await uploadImages(req.files);                                                
-        // await parseInfoPlist(appName, identifier);
+        await cloneBranch();                                     
+        await uploadImages(req.files);                                                
+        await parseInfoPlist(appName, identifier);
         await parseIosCsproj(identifier);
-        // await parseAndroidManifest(appName, identifier);                
-        // await createImages();
-        // await createBranchAndPush(String(appName).replace(/\s/g,''));
-        // await removeTemporaryDirAndImages();
+        await parseAndroidManifest(appName, identifier);                
+        await createImages();
+        await createBranchAndPush(String(appName).replace(/\s/g,''));
+        await removeTemporaryDirAndImages();
         res.send("Finished!");      
     };
 
@@ -192,8 +192,8 @@ module.exports = function (app) {
 
     async function parseIosCsproj(identifier){
       return new Promise((resolve, reject) => {        
-        // let iOSPath = "./tmp/TitleClose/TitleClose.iOS/TitleClose.iOS.csproj";        
-        let iOSPath = "Y:/Projects/new-big-titleclose-mobile/TitleClose/TitleClose.iOS/TitleClose.iOS.csproj";        
+        let iOSPath = "./tmp/TitleClose/TitleClose.iOS/TitleClose.iOS.csproj";        
+        // let iOSPath = "Y:/Projects/new-big-titleclose-mobile/TitleClose/TitleClose.iOS/TitleClose.iOS.csproj";        
         const xmlData = fs.readFileSync(iOSPath).toString();
         xmlNewData = xmlData.replace('com.titleclose', `com.titleclose.${identifier}`)
         // var parsed = parser.parse(xmlData, optionsCsProj, true);                                              
